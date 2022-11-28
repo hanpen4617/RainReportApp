@@ -10,17 +10,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.rainreportapp.databinding.ActivityMainBinding
+import com.example.rainreportapp.work.PeriodicWorker
 import com.google.android.gms.location.*
 import io.realm.Realm
+import java.util.*
+import java.util.concurrent.TimeUnit
 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private var long = 0.0
-    private var lat = 0.0
+    private var longitude = 0.0
+    private var latitude = 0.0
 
-    //権限許可launch
+    //権限許可launch//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -35,14 +41,15 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "現在地を取得できません", Toast.LENGTH_LONG).show()
         }
     }
+    //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        //Realm初期化
         Realm.init(this)
-
-        //パーミッションが許可されているならば//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+        //パーミッションが許可されているか？//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -67,6 +74,8 @@ class MainActivity : AppCompatActivity() {
         //インテントボタン
         val intent = Intent(this,TimeSetActivity::class.java)
         binding.intentButton.setOnClickListener{
+            intent.putExtra("latitude",latitude)
+            intent.putExtra("longitude",longitude)
             startActivity(intent)
         }
      //GridViewのアダプター
@@ -74,9 +83,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun locationStart() {
-
         lateinit var locationCallback: LocationCallback
-
 
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,10000).build()
 
@@ -85,14 +92,13 @@ class MainActivity : AppCompatActivity() {
         locationCallback = object : LocationCallback(){
             override fun onLocationResult(p0: LocationResult) {
                 for(location in p0.locations){
-                    lat = location.latitude
-                    long = location.longitude
+                    latitude = location.latitude
+                    longitude = location.longitude
                     fusedLocationClient.removeLocationUpdates(locationCallback)
+                    periodicStart()
                 }
             }
         }
-
-
 
         //パーミッションが許可されているか//↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
         if (ActivityCompat.checkSelfPermission(
@@ -110,5 +116,30 @@ class MainActivity : AppCompatActivity() {
         fusedLocationClient.requestLocationUpdates(
             locationRequest, locationCallback, Looper.getMainLooper()
         )
+
+    }
+    fun periodicStart(){
+        //毎日00:00時にカレンダーを更新するWorker
+        val current = Calendar.getInstance()
+        val update = Calendar.getInstance()
+        update.set(Calendar.HOUR_OF_DAY, 0)
+        update.set(Calendar.MINUTE,0)
+        update.set(Calendar.SECOND,0)
+        update.add(Calendar.HOUR_OF_DAY,24)
+
+        val data = Data.Builder().apply {
+            putDouble("latitude",latitude)
+            putDouble("longitude",longitude)
+        }.build()
+
+        val delay = update.timeInMillis - current.timeInMillis
+        val request = OneTimeWorkRequestBuilder<PeriodicWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .addTag("weather-work")
+            .setInputData(data)
+            .build()
+
+        WorkManager.getInstance(this).enqueue(request)
+        println("起動")
     }
 }

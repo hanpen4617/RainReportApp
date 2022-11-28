@@ -7,12 +7,13 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.work.*
 import com.example.rainreportapp.databinding.ActivityTimeSetBinding
+import com.example.rainreportapp.work.NotificationWorker
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 
-class IntentActivity : AppCompatActivity() {
+class TimeSetActivity : AppCompatActivity() {
     private lateinit var binding: ActivityTimeSetBinding
     private val setTimer = Calendar.getInstance()
 
@@ -20,39 +21,41 @@ class IntentActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityTimeSetBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-
+        val latitude = intent.getDoubleExtra("latitude",0.0)
+        val longitude = intent.getDoubleExtra("longitude",0.0)
         binding.timeSetButton.setOnClickListener {
             //ダイアログの起動
             showDialog()
         }
 
         //ワーカーの起動
-        binding.send.setOnClickListener {
+        binding.sendButton.setOnClickListener {
             val current = Calendar.getInstance()
             //現在時刻から指定時間までの時間を計算
-            val timeDiff = setTimer.timeInMillis - current.timeInMillis
+            val delay = setTimer.timeInMillis - current.timeInMillis
             val data = Data.Builder().apply {
                 putInt("hour",setTimer.get(Calendar.HOUR_OF_DAY))
                 putInt("min",setTimer.get(Calendar.MINUTE))
+                putDouble("latitude",latitude)
+                putDouble("longitude",longitude)
             }.build()
             //ワーカーをセット
-            current.add(Calendar.MILLISECOND,timeDiff.toInt())
+            current.add(Calendar.MILLISECOND,delay.toInt())
             println(current.time)
-            val request = OneTimeWorkRequestBuilder<WeatherWorker>()
-                .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
-                .addTag("weatherwork")
+            val request = OneTimeWorkRequestBuilder<NotificationWorker>()
+                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                .addTag("weather-work")
                 .setInputData(data)
                 .build()
 
             val manager = WorkManager.getInstance(this)
             manager.enqueue(request)
-            println("Woker起動")
+            println("Worker起動")
         }
 
         //ワーカーの停止
-        binding.stop.setOnClickListener{
-            WorkManager.getInstance(this).cancelAllWorkByTag("weatherwork")
+        binding.workStopButton.setOnClickListener{
+            WorkManager.getInstance(this).cancelAllWorkByTag("weather-work")
         }
     }
 
@@ -65,7 +68,7 @@ class IntentActivity : AppCompatActivity() {
             setTimer.set(Calendar.MINUTE, min)
             setTimer.set(Calendar.SECOND, 0)
             //EditTextに選択された時間を設定
-            binding.timeText.setText(SimpleDateFormat("HH:mm").format(setTimer.time))
+            binding.timeText.text = (SimpleDateFormat("HH:mm").format(setTimer.time))
         }
         TimePickerDialog(this, timeSetListener, setTimer.get(Calendar.HOUR_OF_DAY),
             setTimer.get(Calendar.MINUTE), true).show()
